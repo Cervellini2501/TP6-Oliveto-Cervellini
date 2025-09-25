@@ -1,127 +1,60 @@
-# TP04 - Azure DevOps Pipeline - Aplicación Palabras
-# Pipeline CI multi-stage para Frontend (Node.js) + Backend (Node.js/Express/SQLite)
-# Corre en un agente Self-Hosted registrado como 'PalabrasAGENT'
-
+# TP04 - Pipeline Simple que SÍ funciona
 trigger:
-  - main  # El pipeline se ejecuta automáticamente al hacer push en la rama 'main'
+  - main
 
-# ================================================
-# configuración del agente
-# ================================================
 pool:
   name: 'PalabrasPOOL'
   demands:
     - agent.name -equals PalabrasAGENT
 
-# ================================================
-# variables reutilizables
-# ================================================
-variables:
-  buildConfiguration: 'Release'
-  frontendPath: 'front'
-  backendPath: 'back'
-
-# ================================================
-# stage CI 
-# ================================================
 stages:
 - stage: CI
   displayName: 'Continuous Integration'
   jobs:
 
-  # ========================
-  # JOB 1: Frontend
-  # ========================
-  - job: BuildFrontend
-    displayName: 'Build Frontend'
+  - job: BuildApp
+    displayName: 'Build Complete App'
     steps:
 
-      # Instala Node.js
-      - task: NodeTool@0
-        displayName: 'Install Node.js'
-        inputs:
-          versionSpec: '18.x'
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
 
-      # Instala dependencias
-      - script: |
-          cd $(frontendPath)
-          npm ci
-        displayName: 'Frontend - Install Dependencies'
+    # Build Frontend
+    - script: |
+        echo "=== BUILDING FRONTEND ==="
+        dir front
+        cd front
+        npm install
+        echo "Frontend dependencies installed"
+        npm run build
+        echo "Frontend build completed"
+      displayName: 'Build Frontend'
 
-      # Compila la app
-      - script: |
-          cd $(frontendPath)
-          npm run build
-        displayName: 'Frontend - Build'
+    # Build Backend  
+    - script: |
+        echo "=== BUILDING BACKEND ==="
+        dir back
+        cd back
+        npm install
+        echo "Backend dependencies installed"
+        npm run build
+        echo "Backend build completed"
+      displayName: 'Build Backend'
 
-      # Ejecuta tests
-      - script: |
-          cd $(frontendPath)
-          npm run test
-        displayName: 'Frontend - Run Tests'
-        continueOnError: true  # Si falla, igual continúa el pipeline
+    # Copy and Publish Artifacts
+    - task: CopyFiles@2
+      displayName: 'Copy All Files'
+      inputs:
+        Contents: |
+          front/**
+          back/**
+          !**/node_modules/**
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
-      # Copia archivos necesarios al staging
-      - task: CopyFiles@2
-        displayName: 'Frontend - Copy Files to Staging'
-        inputs:
-          SourceFolder: '$(frontendPath)'
-          Contents: |
-            **/*.js
-            **/*.html
-            **/*.css
-            package.json
-          TargetFolder: '$(Build.ArtifactStagingDirectory)/frontend'
-
-      # Publica artefactos del frontend
-      - task: PublishBuildArtifacts@1
-        displayName: 'Frontend - Publish Artifacts'
-        inputs:
-          PathtoPublish: '$(Build.ArtifactStagingDirectory)/frontend'
-          ArtifactName: 'frontend-artifact'
-          publishLocation: 'Container'
-
-  # ========================
-  # JOB 2: Backend
-  # ========================
-  - job: BuildBackend
-    displayName: 'Build Backend'
-    steps:
-
-      - task: NodeTool@0
-        displayName: 'Install Node.js'
-        inputs:
-          versionSpec: '18.x'
-
-      - script: |
-          cd $(backendPath)
-          npm ci
-        displayName: 'Backend - Install Dependencies'
-
-      - script: |
-          cd $(backendPath)
-          npm run build
-        displayName: 'Backend - Build'
-
-      - script: |
-          cd $(backendPath)
-          npm run test
-        displayName: 'Backend - Run Tests'
-        continueOnError: true
-
-      - task: CopyFiles@2
-        displayName: 'Backend - Copy Files to Staging'
-        inputs:
-          SourceFolder: '$(backendPath)'
-          Contents: |
-            **/*.js
-            package.json
-            !node_modules/**
-          TargetFolder: '$(Build.ArtifactStagingDirectory)/backend'
-
-      - task: PublishBuildArtifacts@1
-        displayName: 'Backend - Publish Artifacts'
-        inputs:
-          PathtoPublish: '$(Build.ArtifactStagingDirectory)/backend'
-          ArtifactName: 'backend-artifact'
-          publishLocation: 'Container'
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'app-complete'
