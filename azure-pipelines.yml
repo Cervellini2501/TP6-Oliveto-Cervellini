@@ -6,8 +6,6 @@ trigger:
 
 pool:
   name: 'PalabrasPOOL'
-  demands:
-    - agent.name -equals PalabrasAGENT
 
 stages:
   - stage: CI
