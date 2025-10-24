@@ -1,4 +1,6 @@
-const API_URL = 'http://localhost:3000/api';
+const API_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+	? 'http://localhost:3000/api'
+	: `${location.origin}/api`;
 
 // Cargar palabras al inicio
 document.addEventListener('DOMContentLoaded', function() {
