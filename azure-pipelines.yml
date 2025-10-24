@@ -1,61 +1,103 @@
-# TP04 - Azure DevOps Pipeline CI - Aplicación de Palabras (Frontend + Backend)
-# Ejecuta en un agente Self-Hosted, construye ambos módulos y publica artefactos
+# TP05 - Azure DevOps CI/CD Pipeline - Aplicación Palabras (Node.js)
+# Arquitectura: Frontend + Backend Node.js con SQLite
 
 trigger:
-  - main
+- main
 
 pool:
-  name: 'PalabrasPOOL'
+  vmImage: 'ubuntu-latest'  # Linux es mejor para Node.js
+
+variables:
+  nodeVersion: '18.x'
+  azureSubscription: 'azure-palabras-connection'
 
 stages:
-  - stage: CI
-    displayName: 'Continuous Integration'
-    jobs:
-      - job: BuildApp
-        displayName: 'Build Frontend + Backend'
-        steps:
+#═══════════════════════════════════════════════════════════
+# STAGE 1: BUILD
+#═══════════════════════════════════════════════════════════
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build and Test Job'
+    steps:
+    
+    # Instalar Node.js
+    - task: NodeTool@0
+      displayName: 'Use Node.js $(nodeVersion)'
+      inputs:
+        versionSpec: '$(nodeVersion)'
+    
+    # Restaurar dependencias del Backend
+    - script: |
+        cd backend
+        npm ci
+      displayName: 'Restore Backend packages'
+    
+    # Build del Backend
+    - script: |
+        cd backend
+        npm run build
+      displayName: 'Build Backend'
+    
+    # Restaurar dependencias del Frontend
+    - script: |
+        cd frontend
+        npm ci
+      displayName: 'Restore Frontend packages'
+    
+    # Build del Frontend
+    - script: |
+        cd frontend
+        npm run build
+      displayName: 'Build Frontend'
+    
+    # Publicar aplicación (preparar para deploy)
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/app
+        cp -r backend/* $(Build.ArtifactStagingDirectory)/app/
+        cp -r frontend $(Build.ArtifactStagingDirectory)/app/
+      displayName: 'Publish application'
+    
+    # Comprimir en ZIP (requerido por Azure Web Apps)
+    - task: ArchiveFiles@2
+      displayName: 'Archive application to ZIP'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/app'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+        replaceExistingArchive: true
+    
+    # Publicar artefacto
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish build artifacts'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'drop'
+        publishLocation: 'Container'
 
-          #Instalar Node.js
-          - task: NodeTool@0
-            displayName: 'Install Node.js 18.x'
+#═══════════════════════════════════════════════════════════
+# STAGE 2: DEPLOY QA
+#═══════════════════════════════════════════════════════════
+- stage: DeployQA
+  displayName: 'Deploy to QA'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployQAJob
+    displayName: 'Deploy to QA Environment'
+    environment: 'QA'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            displayName: 'Deploy to QA Web App'
             inputs:
-              versionSpec: '18.x'
-
-          #======== Build del Frontend ========
-          - script: |
-              echo "=== BUILDING FRONTEND ==="
-              dir frontend
-              cd frontend
-              npm install
-              echo "Frontend dependencies installed"
-              npm run build
-              echo "Frontend build completed"
-            displayName: 'Frontend Build'
-
-          #======== Build del Backend ========
-          - script: |
-              echo "=== BUILDING BACKEND ==="
-              dir backend
-              cd backend
-              npm install
-              echo "Backend dependencies installed"
-              npm run build
-              echo "Backend build completed"
-            displayName: 'Backend Build'
-
-          #Copiar archivos (excepto node_modules)
-          - task: CopyFiles@2
-            displayName: 'Copy Frontend + Backend files (excluding node_modules)'
-            inputs:
-              Contents: |
-                frontend/**
-                backend/**
-                !**/node_modules/**
-              TargetFolder: '$(Build.ArtifactStagingDirectory)'
-
-          #======== Publicar artefactos ========
-          - task: PublishBuildArtifacts@1
-            displayName: 'Publish Combined App Artifacts'
-            inputs:
-              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-              ArtifactName: 'app-complete'
+              azureSubscription: '$(azureSubscription)'
+              appType: 'webAppLinux'
+              appName: 'palabras-qa'
+              package: '$(Pipeline.Workspace)/drop/app.zip'
+              runtimeStack: 'NODE|18-lts'
+              startUpCommand: 'node index.js'
