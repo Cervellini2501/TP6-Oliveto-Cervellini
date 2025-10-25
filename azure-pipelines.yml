@@ -1,23 +1,22 @@
 # TP05 - Azure DevOps CI/CD Pipeline - Aplicación Palabras (Node.js)
 # Basado en arquitectura similar: Backend (Node.js) + Frontend (HTML/JS estáticos)
 
+# Trigger automático: solo cuando hay cambios en main
 trigger:
   branches:
     include:
       - main
 
-pr:
-  branches:
-    include:
-      - '*'
-
+# Pool de agentes: Ubuntu más reciente para mejor compatibilidad con Node.js
 pool:
   vmImage: 'ubuntu-latest'
 
+# Variables globales del pipeline
 variables:
-  nodeVersion: '20.x'
-  azureSubscription: 'azure-palabras-connection'
-  webAppNameQA: 'palabras-qa'
+  nodeVersion: '20.x'  
+  azureSubscription: 'azure-palabras-connection' 
+  webAppNameQA: 'palabras-qa' 
+  webAppNamePROD: 'palabras-prod' 
 
 stages:
 # =======================================
@@ -29,6 +28,7 @@ stages:
     - job: BuildAndTest
       displayName: 'Build and Test Job'
       steps:
+        # Obtener código fuente del repositorio
         - checkout: self
 
         # ---- Setup Node.js ----
@@ -38,23 +38,27 @@ stages:
             versionSpec: "$(nodeVersion)"
 
         # ---- Backend (Node.js + Express) ----
+        # Instala dependencias y ejecuta build del backend
         - script: |
             echo "════════════════════════════════════════"
             echo "  BACKEND BUILD"
             echo "════════════════════════════════════════"
             cd backend
+            # npm ci es más rápido y confiable para CI/CD que npm install
             npm ci
             npm run build
             echo "✅ Backend build completed"
           displayName: "Build Backend"
 
         # ---- Frontend (Static HTML/JS) ----
+        # Prepara archivos estáticos del frontend
         - script: |
             echo "════════════════════════════════════════"
             echo "  FRONTEND BUILD"
             echo "════════════════════════════════════════"
             cd frontend
             # Frontend no requiere build, solo verificación
+            # Instala dependencias solo si existe package.json
             if [ -f "package.json" ]; then
               npm ci --if-present
               npm run build --if-present
@@ -62,9 +66,10 @@ stages:
             echo "✅ Frontend ready"
           displayName: "Prepare Frontend"
 
-        # ---- Copiar Frontend al Backend (como wwwroot) ----
+        # ---- Copiar Frontend al Backend ----
+        # Integra los archivos del frontend dentro del backend para deployment conjunto
         - task: CopyFiles@2
-          displayName: 'Copy Frontend to Backend wwwroot'
+          displayName: 'Copy Frontend to Backend'
           inputs:
             SourceFolder: 'frontend'
             Contents: |
@@ -75,26 +80,29 @@ stages:
             OverWrite: true
 
         # ---- Publicar Backend + Frontend juntos ----
+        # Prepara el paquete final que se deployará
         - script: |
             echo "════════════════════════════════════════"
             echo "  PREPARING PUBLISH PACKAGE"
             echo "════════════════════════════════════════"
             mkdir -p "$(Build.ArtifactStagingDirectory)/publish"
             
-            # Copiar backend completo
+            # Copiar archivos esenciales del backend
             cp backend/index.js "$(Build.ArtifactStagingDirectory)/publish/"
             cp backend/package.json "$(Build.ArtifactStagingDirectory)/publish/"
             cp backend/package-lock.json "$(Build.ArtifactStagingDirectory)/publish/"
+            # node_modules necesario para runtime en Azure App Service
             cp -r backend/node_modules "$(Build.ArtifactStagingDirectory)/publish/"
             
-            # Copiar frontend que ya está dentro de backend
+            # Copiar frontend que ya está integrado dentro de backend
             cp -r backend/frontend "$(Build.ArtifactStagingDirectory)/publish/"
             
-            # Copiar DB si existe
+            # Copiar base de datos SQLite si existe
             if [ -f "backend/palabras.db" ]; then
               cp backend/palabras.db "$(Build.ArtifactStagingDirectory)/publish/"
             fi
             
+            # Mostrar estructura final del paquete para debug
             echo ""
             echo "✅ Package structure:"
             ls -lah "$(Build.ArtifactStagingDirectory)/publish/"
@@ -107,6 +115,7 @@ stages:
           displayName: "Publish Backend+Frontend"
 
         # ---- Publicar Artefacto ----
+        # Guarda el paquete como artefacto para las siguientes etapas
         - task: PublishBuildArtifacts@1
           displayName: "Publish Build Artifact"
           inputs:
@@ -119,21 +128,23 @@ stages:
 # =======================================
 - stage: Deploy_QA
   displayName: "Deploy to QA"
-  dependsOn: BuildAndTest
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  dependsOn: BuildAndTest  # Solo se ejecuta si Build & Test fue exitoso
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))  # Solo para main branch
   jobs:
     - deployment: DeployQA
       displayName: "Desplegar QA"
-      environment: "QA"
+      environment: "QA"  
       strategy:
-        runOnce:
+        runOnce: 
           deploy:
             steps:
               - checkout: self
               
+              # Descargar el artefacto generado en la etapa anterior
               - download: current
                 artifact: drop
 
+              # Deploy principal a Azure App Service
               - task: AzureWebApp@1
                 displayName: "Deploy Backend+Frontend QA"
                 inputs:
@@ -141,14 +152,57 @@ stages:
                   appType: 'webAppLinux'
                   appName: "$(webAppNameQA)"
                   package: "$(Pipeline.Workspace)/drop"
-                  runtimeStack: 'NODE|20-lts'
-                  startUpCommand: 'node index.js'
+                  runtimeStack: 'NODE|20-lts' 
+                  startUpCommand: 'node index.js'  # Comando de inicio de la aplicación
 
-              # Health Check
+              # Verificación de salud post-deployment
               - script: |
                   echo "⏳ Esperando 30 segundos para que la app inicie..."
                   sleep 30
                   echo "🔍 Verificando QA deployment..."
+                  # Health check básico - no falla el pipeline si no responde inmediatamente
                   curl -f https://$(webAppNameQA).brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
                 displayName: "Health Check QA"
-                continueOnError: true
+                continueOnError: true  # No falla el pipeline si el health check falla
+
+# =======================================
+# 🚀 DEPLOY PROD
+# =======================================
+- stage: Deploy_PROD
+  displayName: "Deploy to Production"
+  dependsOn: Deploy_QA  # Solo se ejecuta si QA deployment fue exitoso
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))  # Solo para main branch
+  jobs:
+    - deployment: DeployPROD
+      displayName: "Desplegar PROD"
+      environment: "PROD"  # ⚠️ Aprobaciones manuales configuradas
+      strategy:
+        runOnce:  
+          deploy:
+            steps:
+              - checkout: self
+              
+              # Usar el mismo artefacto que se deployó en QA
+              - download: current
+                artifact: drop
+
+              # Deploy a producción - idéntico al de QA pero diferente App Service
+              - task: AzureWebApp@1
+                displayName: "Deploy Backend+Frontend PROD"
+                inputs:
+                  azureSubscription: "$(azureSubscription)"
+                  appType: 'webAppLinux'
+                  appName: "$(webAppNamePROD)"
+                  package: "$(Pipeline.Workspace)/drop"
+                  runtimeStack: 'NODE|20-lts'
+                  startUpCommand: 'node index.js'
+
+              # Health Check crítico para producción
+              - script: |
+                  echo "⏳ Esperando 30 segundos para que la app inicie..."
+                  sleep 30
+                  echo "🔍 Verificando PROD deployment..."
+                  # Verificación más estricta en PROD - considerar múltiples endpoints
+                  curl -f https://$(webAppNamePROD).brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
+                displayName: "Health Check PROD"
+                continueOnError: true  
