@@ -2,102 +2,141 @@
 # Arquitectura: Frontend + Backend Node.js con SQLite
 
 trigger:
-- main
+  branches:
+    include:
+      - main
+      - master
 
-pool:
-  vmImage: 'ubuntu-latest'  # Linux es mejor para Node.js
+pr:
+  branches:
+    include:
+      - '*'
 
 variables:
-  nodeVersion: '18.x'
-  azureSubscription: 'azure-palabras-connection'
+- group: BackendSecrets
+
+pool:
+  vmImage: 'ubuntu-latest'
 
 stages:
-#═══════════════════════════════════════════════════════════
-# STAGE 1: BUILD
-#═══════════════════════════════════════════════════════════
-- stage: Build
-  displayName: 'Build and Test'
+# =======================================
+# 🧱 BUILD & TEST
+# =======================================
+- stage: BuildAndTest
+  displayName: "Build & Test Backend + Frontend"
   jobs:
-  - job: BuildJob
-    displayName: 'Build and Test Job'
-    steps:
-    
-    # Instalar Node.js
-    - task: NodeTool@0
-      displayName: 'Use Node.js $(nodeVersion)'
-      inputs:
-        versionSpec: '$(nodeVersion)'
-    
-    # Restaurar dependencias del Backend
-    - script: |
-        cd backend
-        npm ci
-      displayName: 'Restore Backend packages'
-    
-    # Build del Backend
-    - script: |
-        cd backend
-        npm run build
-      displayName: 'Build Backend'
-    
-    # Restaurar dependencias del Frontend
-    - script: |
-        cd frontend
-        npm ci
-      displayName: 'Restore Frontend packages'
-    
-    # Build del Frontend
-    - script: |
-        cd frontend
-        npm run build
-      displayName: 'Build Frontend'
-    
-    # Publicar aplicación (preparar para deploy)
-    - script: |
-        mkdir -p $(Build.ArtifactStagingDirectory)/app
-        cp -r backend/* $(Build.ArtifactStagingDirectory)/app/
-        cp -r frontend $(Build.ArtifactStagingDirectory)/app/
-      displayName: 'Publish application'
-    
-    # Comprimir en ZIP (requerido por Azure Web Apps)
-    - task: ArchiveFiles@2
-      displayName: 'Archive application to ZIP'
-      inputs:
-        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/app'
-        includeRootFolder: false
-        archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
-        replaceExistingArchive: true
-    
-    # Publicar artefacto
-    - task: PublishBuildArtifacts@1
-      displayName: 'Publish build artifacts'
-      inputs:
-        pathToPublish: '$(Build.ArtifactStagingDirectory)'
-        artifactName: 'drop'
-        publishLocation: 'Container'
+    - job: BuildAndTest
+      displayName: "Build and Test Job"
+      steps:
+        - checkout: self
 
-#═══════════════════════════════════════════════════════════
-# STAGE 2: DEPLOY QA
-#═══════════════════════════════════════════════════════════
-- stage: DeployQA
-  displayName: 'Deploy to QA'
-  dependsOn: Build
+        # ---- Setup Node.js ----
+        - task: NodeTool@0
+          displayName: "Setup Node.js 18"
+          inputs:
+            versionSpec: "18.x"
+
+        # ---- Backend (Node.js) ----
+        - script: npm ci
+          displayName: "Restore Backend Dependencies"
+          workingDirectory: backend
+
+        - script: npm run build
+          displayName: "Build Backend"
+          workingDirectory: backend
+
+        - script: npm test
+          displayName: "Run Backend Tests"
+          workingDirectory: backend
+          continueOnError: true
+
+        # ---- Frontend (Node.js) ----
+        - script: npm ci
+          displayName: "Restore Frontend Dependencies"
+          workingDirectory: frontend
+
+        - script: npm run build
+          displayName: "Build Frontend"
+          workingDirectory: frontend
+
+        - script: npm test
+          displayName: "Run Frontend Tests"
+          workingDirectory: frontend
+          continueOnError: true
+
+        # ---- Preparar artefactos para deploy ----
+        - script: |
+            mkdir -p $(Build.ArtifactStagingDirectory)/app
+            
+            # Copiar backend a la raíz
+            cp -r backend/* $(Build.ArtifactStagingDirectory)/app/
+            
+            # Crear carpeta public para frontend compilado
+            mkdir -p $(Build.ArtifactStagingDirectory)/app/public
+            
+            # Copiar archivos compilados del frontend
+            if [ -d "frontend/build" ]; then
+              cp -r frontend/build/* $(Build.ArtifactStagingDirectory)/app/public/
+              echo "✅ Frontend copiado desde build/"
+            elif [ -d "frontend/dist" ]; then
+              cp -r frontend/dist/* $(Build.ArtifactStagingDirectory)/app/public/
+              echo "✅ Frontend copiado desde dist/"
+            else
+              echo "❌ No se encontró carpeta build o dist en frontend"
+              ls -la frontend/
+              exit 1
+            fi
+            
+            # Verificar estructura final
+            echo "📁 Estructura del artefacto:"
+            find $(Build.ArtifactStagingDirectory)/app -type f | head -15
+          displayName: "Prepare Application Artifacts"
+
+        # ---- Comprimir en ZIP ----
+        - task: ArchiveFiles@2
+          displayName: "Archive Application to ZIP"
+          inputs:
+            rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/app'
+            includeRootFolder: false
+            archiveType: 'zip'
+            archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+            replaceExistingArchive: true
+
+        # ---- Publicar artefactos ----
+        - task: PublishBuildArtifacts@1
+          displayName: "Publish Build Artifacts"
+          inputs:
+            PathtoPublish: "$(Build.ArtifactStagingDirectory)"
+            ArtifactName: "drop"
+
+# =======================================
+# 🌐 DEPLOY QA
+# =======================================
+- stage: Deploy_QA
+  displayName: "Deploy to QA"
+  dependsOn: BuildAndTest
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  variables:
+    WEBAPP_QA: palabras-qa
+    azureSubscription: 'azure-palabras-connection'
   jobs:
-  - deployment: DeployQAJob
-    displayName: 'Deploy to QA Environment'
-    environment: 'QA'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - task: AzureWebApp@1
-            displayName: 'Deploy to QA Web App'
-            inputs:
-              azureSubscription: '$(azureSubscription)'
-              appType: 'webAppLinux'
-              appName: 'palabras-qa'
-              package: '$(Pipeline.Workspace)/drop/app.zip'
-              runtimeStack: 'NODE|18-lts'
-              startUpCommand: 'node index.js'
+    - deployment: DeployQA
+      displayName: "Deploy to QA Environment"
+      environment: "QA"
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: self
+              - download: current
+                artifact: drop
+
+              - task: AzureWebApp@1
+                displayName: "Deploy to QA Web App"
+                inputs:
+                  azureSubscription: "$(azureSubscription)"
+                  appType: 'webAppLinux'
+                  appName: "$(WEBAPP_QA)"
+                  package: "$(Pipeline.Workspace)/drop/app.zip"
+                  runtimeStack: 'NODE|20-lts'
+                  startUpCommand: 'node index.js'
