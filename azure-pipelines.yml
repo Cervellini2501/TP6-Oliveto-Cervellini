@@ -128,23 +128,38 @@ stages:
 # =======================================
 - stage: Deploy_QA
   displayName: "Deploy to QA"
-  dependsOn: BuildAndTest  # Solo se ejecuta si Build & Test fue exitoso
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))  # Solo para main branch
+  dependsOn: BuildAndTest
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  # Importar variables de QA
+  variables:
+  - group: QA-Variables
   jobs:
     - deployment: DeployQA
       displayName: "Desplegar QA"
-      environment: "QA"  
+      environment: "QA"
       strategy:
-        runOnce: 
+        runOnce:
           deploy:
             steps:
               - checkout: self
               
-              # Descargar el artefacto generado en la etapa anterior
               - download: current
                 artifact: drop
 
-              # Deploy principal a Azure App Service
+              # Configurar variables de entorno
+              - task: AzureAppServiceSettings@1
+                displayName: "Configure QA Environment Variables"
+                inputs:
+                  azureSubscription: "$(azureSubscription)"
+                  appName: "$(webAppNameQA)"
+                  resourceGroupName: "rg-palabras-tp05-2025"
+                  appSettings: |
+                    [
+                      { "name": "ENVIRONMENT_NAME", "value": "$(ENVIRONMENT_NAME)" },
+                      { "name": "NODE_ENV", "value": "$(NODE_ENV)" },
+                      { "name": "DB_PATH", "value": "$(DB_PATH)" }
+                    ]
+
               - task: AzureWebApp@1
                 displayName: "Deploy Backend+Frontend QA"
                 inputs:
@@ -152,41 +167,54 @@ stages:
                   appType: 'webAppLinux'
                   appName: "$(webAppNameQA)"
                   package: "$(Pipeline.Workspace)/drop"
-                  runtimeStack: 'NODE|20-lts' 
-                  startUpCommand: 'node index.js'  # Comando de inicio de la aplicación
+                  runtimeStack: 'NODE|20-lts'
+                  startUpCommand: 'node index.js'
 
-              # Verificación de salud post-deployment
               - script: |
-                  echo "⏳ Esperando 30 segundos para que la app inicie..."
+                  echo "⏳ Esperando 30 segundos..."
                   sleep 30
-                  echo "🔍 Verificando QA deployment..."
-                  # Health check básico - no falla el pipeline si no responde inmediatamente
-                  curl -f https://$(webAppNameQA).brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
+                  echo "🔍 Verificando QA: $(ENVIRONMENT_NAME)"
+                  curl -f https://palabras-qa-gebud8fdgxejeyen.brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
                 displayName: "Health Check QA"
-                continueOnError: true  # No falla el pipeline si el health check falla
+                continueOnError: true
 
 # =======================================
 # 🚀 DEPLOY PROD
 # =======================================
 - stage: Deploy_PROD
   displayName: "Deploy to Production"
-  dependsOn: Deploy_QA  # Solo se ejecuta si QA deployment fue exitoso
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))  # Solo para main branch
+  dependsOn: Deploy_QA
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  # Importar variables de PROD
+  variables:
+  - group: PROD-Variables
   jobs:
     - deployment: DeployPROD
       displayName: "Desplegar PROD"
-      environment: "PROD"  # ⚠️ Aprobaciones manuales configuradas
+      environment: "PROD"
       strategy:
-        runOnce:  
+        runOnce:
           deploy:
             steps:
               - checkout: self
               
-              # Usar el mismo artefacto que se deployó en QA
               - download: current
                 artifact: drop
 
-              # Deploy a producción - idéntico al de QA pero diferente App Service
+              # Configurar variables de entorno
+              - task: AzureAppServiceSettings@1
+                displayName: "Configure PROD Environment Variables"
+                inputs:
+                  azureSubscription: "$(azureSubscription)"
+                  appName: "$(webAppNamePROD)"  
+                  resourceGroupName: "rg-palabras-tp05-2025"
+                  appSettings: |
+                    [
+                      { "name": "ENVIRONMENT_NAME", "value": "$(ENVIRONMENT_NAME)" },
+                      { "name": "NODE_ENV", "value": "$(NODE_ENV)" },
+                      { "name": "DB_PATH", "value": "$(DB_PATH)" }
+                    ]
+
               - task: AzureWebApp@1
                 displayName: "Deploy Backend+Frontend PROD"
                 inputs:
@@ -197,12 +225,10 @@ stages:
                   runtimeStack: 'NODE|20-lts'
                   startUpCommand: 'node index.js'
 
-              # Health Check crítico para producción
               - script: |
-                  echo "⏳ Esperando 30 segundos para que la app inicie..."
+                  echo "⏳ Esperando 30 segundos..."
                   sleep 30
-                  echo "🔍 Verificando PROD deployment..."
-                  # Verificación más estricta en PROD - considerar múltiples endpoints
-                  curl -f https://$(webAppNamePROD).brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
+                  echo "🔍 Verificando PROD: $(ENVIRONMENT_NAME)"
+                  curl -f https://palabras-prod-amgufubhacevetcn.brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
                 displayName: "Health Check PROD"
-                continueOnError: true  
+                continueOnError: true
