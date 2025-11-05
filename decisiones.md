@@ -14,7 +14,9 @@
 5. En el proyecto del TP4 en Azure DevOps crear un Service Connection <<azure-palabras-connection>> hacia el resource group creado.
 
 ![image2](images/foto2.png)  
+
 Confirmar que la conexión aparece como colaborador en el resource group.  
+
 ![image3](images/foto3.png)
 
 6. Probar la ejecución del pipeline `azure-pipeline.yml` del TP4 (asegurarse de que el self‑hosted agent esté levantado).
@@ -22,6 +24,7 @@ Confirmar que la conexión aparece como colaborador en el resource group.
 ![image4](images/foto4.png)
 
 7. Crear environments: `QA` y `PROD`. 
+
 ![environments](images/environments.png) 
 
 8. Modificar el pipeline para incluir los requisitos nuevos:
@@ -29,15 +32,19 @@ Confirmar que la conexión aparece como colaborador en el resource group.
    - Ajustar stages/tasks según el despliegue a QA.
 
 Verificar que el pipeline corre correctamente.  
+
 ![image5](images/foto5.png)
 
 Confirmar que la Web App `palabras-qa` muestra la aplicación correctamente.  
+
 ![image6](images/foto6.png)
 
 9. Configurar las aprobaciones necesarias del environment `PROD`.  
+
 10. Modificar el pipeline para añadir el stage de `PROD` y las aprobaciones correspondientes.
 
 Evidencias del despliegue y aprobaciones:
+
 ![image7](images/foto7.png)
 
 ![image8](images/foto8.png)
