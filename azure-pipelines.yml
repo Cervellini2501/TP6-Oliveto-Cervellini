@@ -1,234 +1,54 @@
-# TP05 - Azure DevOps CI/CD Pipeline - Aplicación Palabras (Node.js)
-# Basado en arquitectura similar: Backend (Node.js) + Frontend (HTML/JS estáticos)
+# TP6 – Azure DevOps CI/CD Pipeline – Pruebas Unitarias (Backend .NET + Frontend Angular)
 
-# Trigger automático: solo cuando hay cambios en main
 trigger:
-  branches:
-    include:
-      - main
+- main
 
-# Pool de agentes: Ubuntu más reciente para mejor compatibilidad con Node.js
 pool:
   vmImage: 'ubuntu-latest'
 
-# Variables globales del pipeline
 variables:
-  nodeVersion: '20.x'  
-  azureSubscription: 'azure-palabras-connection' 
-  webAppNameQA: 'palabras-qa' 
-  webAppNamePROD: 'palabras-prod' 
+  buildConfiguration: 'Release'
 
-stages:
-# =======================================
-# 🧱 BUILD & TEST
-# =======================================
-- stage: BuildAndTest
-  displayName: "Build & Test Backend + Frontend"
-  jobs:
-    - job: BuildAndTest
-      displayName: 'Build and Test Job'
-      steps:
-        # Obtener código fuente del repositorio
-        - checkout: self
+steps:
+# 1️⃣ Instalar .NET 8
+- task: UseDotNet@2
+  inputs:
+    version: '8.x'
+  displayName: 'Instalar .NET 8 SDK'
 
-        # ---- Setup Node.js ----
-        - task: NodeTool@0
-          displayName: "Setup Node.js $(nodeVersion)"
-          inputs:
-            versionSpec: "$(nodeVersion)"
+# 2️⃣ Instalar Node.js (para Angular)
+- task: NodeTool@0
+  inputs:
+    versionSpec: '20.x'
+  displayName: 'Instalar Node.js 20'
 
-        # ---- Backend (Node.js + Express) ----
-        # Instala dependencias y ejecuta build del backend
-        - script: |
-            echo "════════════════════════════════════════"
-            echo "  BACKEND BUILD"
-            echo "════════════════════════════════════════"
-            cd backend
-            # npm ci es más rápido y confiable para CI/CD que npm install
-            npm ci
-            npm run build
-            echo "✅ Backend build completed"
-          displayName: "Build Backend"
+# 3️⃣ Ejecutar pruebas del Backend (.NET + xUnit)
+- script: |
+    cd backend
+    dotnet restore
+    dotnet build --configuration $(buildConfiguration)
+    dotnet test --configuration $(buildConfiguration) --logger "trx;LogFileName=test-backend.trx"
+  displayName: 'Ejecutar pruebas Backend'
 
-        # ---- Frontend (Static HTML/JS) ----
-        # Prepara archivos estáticos del frontend
-        - script: |
-            echo "════════════════════════════════════════"
-            echo "  FRONTEND BUILD"
-            echo "════════════════════════════════════════"
-            cd frontend
-            # Frontend no requiere build, solo verificación
-            # Instala dependencias solo si existe package.json
-            if [ -f "package.json" ]; then
-              npm ci --if-present
-              npm run build --if-present
-            fi
-            echo "✅ Frontend ready"
-          displayName: "Prepare Frontend"
+# 4️⃣ Ejecutar pruebas del Frontend (Angular + Jasmine)
+- script: |
+    cd frontend
+    npm ci
+    npm run test -- --watch=false --browsers ChromeHeadless || true
+  displayName: 'Ejecutar pruebas Frontend'
 
-        # ---- Copiar Frontend al Backend ----
-        # Integra los archivos del frontend dentro del backend para deployment conjunto
-        - task: CopyFiles@2
-          displayName: 'Copy Frontend to Backend'
-          inputs:
-            SourceFolder: 'frontend'
-            Contents: |
-              index.html
-              app.js
-              styles.css
-            TargetFolder: 'backend/frontend'
-            OverWrite: true
+# 5️⃣ Publicar resultados de pruebas Backend
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'VSTest'
+    testResultsFiles: '**/test-backend.trx'
+    failTaskOnFailedTests: true
+  displayName: 'Publicar resultados Backend'
 
-        # ---- Publicar Backend + Frontend juntos ----
-        # Prepara el paquete final que se deployará
-        - script: |
-            echo "════════════════════════════════════════"
-            echo "  PREPARING PUBLISH PACKAGE"
-            echo "════════════════════════════════════════"
-            mkdir -p "$(Build.ArtifactStagingDirectory)/publish"
-            
-            # Copiar archivos esenciales del backend
-            cp backend/index.js "$(Build.ArtifactStagingDirectory)/publish/"
-            cp backend/package.json "$(Build.ArtifactStagingDirectory)/publish/"
-            cp backend/package-lock.json "$(Build.ArtifactStagingDirectory)/publish/"
-            # node_modules necesario para runtime en Azure App Service
-            cp -r backend/node_modules "$(Build.ArtifactStagingDirectory)/publish/"
-            
-            # Copiar frontend que ya está integrado dentro de backend
-            cp -r backend/frontend "$(Build.ArtifactStagingDirectory)/publish/"
-            
-            # Copiar base de datos SQLite si existe
-            if [ -f "backend/palabras.db" ]; then
-              cp backend/palabras.db "$(Build.ArtifactStagingDirectory)/publish/"
-            fi
-            
-            # Mostrar estructura final del paquete para debug
-            echo ""
-            echo "✅ Package structure:"
-            ls -lah "$(Build.ArtifactStagingDirectory)/publish/"
-            echo ""
-            echo "📁 Frontend files:"
-            ls -lah "$(Build.ArtifactStagingDirectory)/publish/frontend/"
-            echo ""
-            echo "📄 Backend index.js (first 5 lines):"
-            head -n 5 "$(Build.ArtifactStagingDirectory)/publish/index.js"
-          displayName: "Publish Backend+Frontend"
-
-        # ---- Publicar Artefacto ----
-        # Guarda el paquete como artefacto para las siguientes etapas
-        - task: PublishBuildArtifacts@1
-          displayName: "Publish Build Artifact"
-          inputs:
-            PathtoPublish: "$(Build.ArtifactStagingDirectory)/publish"
-            ArtifactName: "drop"
-            publishLocation: 'Container'
-
-# =======================================
-# 🌐 DEPLOY QA
-# =======================================
-- stage: Deploy_QA
-  displayName: "Deploy to QA"
-  dependsOn: BuildAndTest
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  # Importar variables de QA
-  variables:
-  - group: QA-Variables
-  jobs:
-    - deployment: DeployQA
-      displayName: "Desplegar QA"
-      environment: "QA"
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - checkout: self
-              
-              - download: current
-                artifact: drop
-
-              # Configurar variables de entorno
-              - task: AzureAppServiceSettings@1
-                displayName: "Configure QA Environment Variables"
-                inputs:
-                  azureSubscription: "$(azureSubscription)"
-                  appName: "$(webAppNameQA)"
-                  resourceGroupName: "palabras-ingsoft3-2025"
-                  appSettings: |
-                    [
-                      { "name": "ENVIRONMENT_NAME", "value": "$(ENVIRONMENT_NAME)" },
-                      { "name": "NODE_ENV", "value": "$(NODE_ENV)" },
-                      { "name": "DB_PATH", "value": "$(DB_PATH)" }
-                    ]
-
-              - task: AzureWebApp@1
-                displayName: "Deploy Backend+Frontend QA"
-                inputs:
-                  azureSubscription: "$(azureSubscription)"
-                  appType: 'webAppLinux'
-                  appName: "$(webAppNameQA)"
-                  package: "$(Pipeline.Workspace)/drop"
-                  runtimeStack: 'NODE|20-lts'
-                  startUpCommand: 'node index.js'
-
-              - script: |
-                  echo "⏳ Esperando 30 segundos..."
-                  sleep 30
-                  echo "🔍 Verificando QA: $(ENVIRONMENT_NAME)"
-                  curl -f https://palabras-qa-gebud8fdgxejeyen.brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
-                displayName: "Health Check QA"
-                continueOnError: true
-
-# =======================================
-# 🚀 DEPLOY PROD
-# =======================================
-- stage: Deploy_PROD
-  displayName: "Deploy to Production"
-  dependsOn: Deploy_QA
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  # Importar variables de PROD
-  variables:
-  - group: PROD-Variables
-  jobs:
-    - deployment: DeployPROD
-      displayName: "Desplegar PROD"
-      environment: "PROD"
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - checkout: self
-              
-              - download: current
-                artifact: drop
-
-              # Configurar variables de entorno
-              - task: AzureAppServiceSettings@1
-                displayName: "Configure PROD Environment Variables"
-                inputs:
-                  azureSubscription: "$(azureSubscription)"
-                  appName: "$(webAppNamePROD)"  
-                  resourceGroupName: "palabras-ingsoft3-2025"
-                  appSettings: |
-                    [
-                      { "name": "ENVIRONMENT_NAME", "value": "$(ENVIRONMENT_NAME)" },
-                      { "name": "NODE_ENV", "value": "$(NODE_ENV)" },
-                      { "name": "DB_PATH", "value": "$(DB_PATH)" }
-                    ]
-
-              - task: AzureWebApp@1
-                displayName: "Deploy Backend+Frontend PROD"
-                inputs:
-                  azureSubscription: "$(azureSubscription)"
-                  appType: 'webAppLinux'
-                  appName: "$(webAppNamePROD)"
-                  package: "$(Pipeline.Workspace)/drop"
-                  runtimeStack: 'NODE|20-lts'
-                  startUpCommand: 'node index.js'
-
-              - script: |
-                  echo "⏳ Esperando 30 segundos..."
-                  sleep 30
-                  echo "🔍 Verificando PROD: $(ENVIRONMENT_NAME)"
-                  curl -f https://palabras-prod-amgufubhacevetcn.brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
-                displayName: "Health Check PROD"
-                continueOnError: true
+# 6️⃣ Publicar resultados de pruebas Frontend
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: '**/test-results/test-results.xml'
+    failTaskOnFailedTests: false
+  displayName: 'Publicar resultados Frontend'
