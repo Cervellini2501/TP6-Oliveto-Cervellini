@@ -22,13 +22,13 @@ steps:
     versionSpec: '20.x'
   displayName: 'Instalar Node.js 20'
 
-# 3️⃣ Ejecutar pruebas del Backend (.NET + xUnit)
+# 3️⃣ Ejecutar pruebas del Backend (para backend Node.js):
 - script: |
     cd backend
-    dotnet restore
-    dotnet build --configuration $(buildConfiguration)
-    dotnet test --configuration $(buildConfiguration) --logger "trx;LogFileName=test-backend.trx"
-  displayName: 'Ejecutar pruebas Backend'
+    npm ci
+    npm test
+  displayName: 'Ejecutar pruebas Backend (Node.js)'
+
 
 # 4️⃣ Ejecutar pruebas del Frontend (Angular + Jasmine)
 - script: |
