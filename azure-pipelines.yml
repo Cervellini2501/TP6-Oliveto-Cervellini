@@ -25,7 +25,7 @@ steps:
 # 3️⃣ Ejecutar pruebas del Backend (para backend Node.js):
 - script: |
     cd backend
-    npm ci
+    npm install
     npm test
   displayName: 'Ejecutar pruebas Backend (Node.js)'
 
