@@ -55,3 +55,28 @@ describe('API Palabras - validación de POST /api/palabras', () => {
     expect(res.body).toEqual({ error: 'La palabra es requerida' });
   });
 });
+
+describe('API Palabras - validaciones adicionales de POST /api/palabras', () => {
+  test('debe responder 400 si la palabra es una cadena vacía', async () => {
+    const payload = { palabra: '' };
+
+    const res = await request(app)
+      .post('/api/palabras')
+      .send(payload);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+
+  test('debe responder 400 si la palabra tiene solo espacios', async () => {
+    const payload = { palabra: '   ' };
+
+    const res = await request(app)
+      .post('/api/palabras')
+      .send(payload);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+});
+
