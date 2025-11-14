@@ -35,5 +35,29 @@ describe('Validación de palabras en el frontend', () => {
       expect(esPalabraValida(p)).toBe(true);
     });
   });
+    
+  test('debe aceptar palabras válidas aunque tengan espacios al principio o al final', () => {
+    const conEspacios = ['  hola', 'mundo  ', '  prueba  '];
+
+    conEspacios.forEach(p => {
+      expect(esPalabraValida(p)).toBe(true);
+    });
+  });
+  
+  test('siempre debe devolver un valor booleano', () => {
+    const entradas = ['', '   ', 'a', 'ok', 'palabra', ' prueba '];
+
+    entradas.forEach(p => {
+      const resultado = esPalabraValida(p);
+      expect(typeof resultado).toBe('boolean');
+    });
+  });
+
+  test('debe devolver false si no se pasa ningún parámetro', () => {
+    // llamada sin argumentos
+    const resultado = esPalabraValida();
+    expect(resultado).toBe(false);
+  });
+
 
 });
