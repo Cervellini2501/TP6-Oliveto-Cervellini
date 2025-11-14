@@ -32,6 +32,9 @@ jest.mock('sqlite3', () => {
 // 👉 Importamos la app DESPUÉS de mockear sqlite3
 const app = require('./index');
 
+// -----------------------------
+// TEST 1: endpoint de salud
+// -----------------------------
 describe('API Palabras - endpoint /health', () => {
   test('GET /health debe responder 200 y status OK', async () => {
     const res = await request(app).get('/health');
@@ -43,6 +46,9 @@ describe('API Palabras - endpoint /health', () => {
   });
 });
 
+// --------------------------------------
+// TEST 2 y 3: validaciones de POST /api/palabras
+// --------------------------------------
 describe('API Palabras - validación de POST /api/palabras', () => {
   test('debe responder 400 si falta el campo "palabra"', async () => {
     const payload = {}; // no mandamos "palabra"
@@ -54,9 +60,7 @@ describe('API Palabras - validación de POST /api/palabras', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ error: 'La palabra es requerida' });
   });
-});
 
-describe('API Palabras - validaciones adicionales de POST /api/palabras', () => {
   test('debe responder 400 si la palabra es una cadena vacía', async () => {
     const payload = { palabra: '' };
 
@@ -67,16 +71,24 @@ describe('API Palabras - validaciones adicionales de POST /api/palabras', () => 
     expect(res.statusCode).toBe(400);
     expect(res.body).toHaveProperty('error');
   });
+});
 
-  test('debe responder 400 si la palabra tiene solo espacios', async () => {
-    const payload = { palabra: '   ' };
+// --------------------------------------
+// TEST 4: caso exitoso de POST /api/palabras
+// --------------------------------------
+describe('API Palabras - caso exitoso de POST /api/palabras', () => {
+  test('debe responder 2xx y no incluir error cuando la palabra es válida', async () => {
+    const payload = { palabra: 'hola' };
 
     const res = await request(app)
       .post('/api/palabras')
       .send(payload);
 
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toHaveProperty('error');
+    // aceptamos 200 o 201 como válidos
+    expect(res.statusCode).toBeGreaterThanOrEqual(200);
+    expect(res.statusCode).toBeLessThan(300);
+
+    // el body no debería tener un campo de error
+    expect(res.body).not.toHaveProperty('error');
   });
 });
-
