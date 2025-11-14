@@ -1,31 +1,51 @@
-# README — TP4 / Despliegue en Azure
+# TP6 – Pruebas Unitarias (Ingeniería de Software 3)
 
-Resumen
--------
-Este repositorio contiene la aplicación del TP5 y las configuraciones de despliegue a Azure App Service. Aquí encontrarás cómo acceder a las aplicaciones (QA / PROD) y el proceso estándar de despliegue mediante Azure DevOps.
+**Autores:** Sofía Oliveto – Valentina Cervellini  
+**Año:** 2025
 
-Acceso a los servicios
-----------------------
-- Entorno QA:
-  - URL pública (reemplazar): <<palabras-qa-gebud8fdgxejeyen.brazilsouth-01.azurewebsites.net>>  
-  - Nota: esta URL corresponde a la Web App `palabras-qa` creada en Azure.
-- Entorno PROD:
-  - URL pública (reemplazar): <<palabras-prod-amgufubhacevetcn.brazilsouth-01.azurewebsites.net>>  
-  - Nota: esta URL corresponde a la Web App `palabras-prod` creada en Azure.
+Este proyecto implementa pruebas unitarias para el **frontend** y **backend**, integradas con **Azure DevOps** y posteriormente migradas a **GitHub**.  
+Incluye validaciones, mocks, pruebas de API y pipeline de CI.
 
-Credenciales y permisos
------------------------
-- Acceso a Azure Portal: usar la cuenta corporativa correspondiente.
-- Azure DevOps:
-  - Proyecto: <<TP4>>
-  - Service Connection: <<azure-palabras-connection>>
-- No guardar secretos en el repositorio. Usar Azure Key Vault o las Variables/Secretos del pipeline.
+---
 
-Pasos concretos para ejecutar el pipeline (resumen)
----------------------------------------------------
-- En Azure DevOps → Pipelines → Nombre del pipeline: <<TP5>>
-  1. Seleccionar "Run pipeline".
-  2. Confirmar variables (si es necesario).
-  3. Ejecutar y seguir los stages.
-  4. Para PROD: aprobar cuando el pipeline solicite la aprobación en el Environment `PROD`.
+## 📌 1. Tecnologías utilizadas
 
+### **Frontend**
+- JavaScript
+- Jest (con entorno `jsdom`)
+- Validación de cadenas (`esPalabraValida`)
+
+### **Backend**
+- Node.js / Express
+- Jest
+- Supertest (para requests HTTP simulados)
+- Mock de `sqlite3` para evitar acceso a la base real
+
+### **CI/CD**
+- Azure DevOps Pipelines
+- Ejecución automática de tests
+- Integración continua con rama `main`
+
+---
+
+## 📌 2. Estructura del Proyecto
+
+```bash
+TP6-Oliveto-Cervellini/
+│
+├── backend/
+│   ├── index.js
+│   ├── index.test.js
+│   └── palabras.db
+│
+├── frontend/
+│   ├── app.js
+│   ├── app.test.js
+│   ├── index.js
+│   └── index.html
+│
+├── images/
+│   └── (capturas utilizadas en documentación)
+│
+├── decisiones.md
+└── README.md
