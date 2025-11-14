@@ -1,104 +1,126 @@
-# Decisiones — TP5
+# Decisiones — Trabajo Práctico 6 — Ingeniería de Software 3
 
-## 1. Configuración Inicial de Azure
+## 📌 1. Elección de Frameworks de Testing
 
-1. Entrar al portal de Azure.  
-2. Crear el resource group: `palabras-ingsoft3-2025`.  
-3. Crear un App Service Plan llamado `plan-palabras-free` dentro del resource group creado.  
-4. Crear las Web Apps (en el mismo RG y plan), con runtime Node 20‑lts:
-   - `palabras-prod`  
-   - `palabras-qa`
+### **Frontend – Jest**
+- Se eligió **Jest** como framework principal de testing.
+- Permite usar **jsdom** para simular el navegador sin necesidad de un entorno real.
+- Es simple de configurar y muy usado en la comunidad.
+- Se utilizó para probar la función de validación del frontend (`esPalabraValida`).
 
-![image1](images/foto1.png)
+### **Backend – Jest + Supertest**
+- El backend se testeó con:
+  - **Jest** → motor de pruebas.
+  - **Supertest** → permite testear endpoints HTTP sin levantar un servidor real.
+- Permite validar la API como si un cliente real enviara requests.
 
-5. En el proyecto del TP4 en Azure DevOps crear un Service Connection <<azure-palabras-connection>> hacia el resource group creado.
+---
+## 📌 2. Decisiones sobre Mocking (Base de Datos)
 
-![image2](images/foto2.png)  
+### **Mock de sqlite3**
+- Para evitar dependencias del sistema y acceso a archivos reales, se decidió:
+  - **Mockear completamente `sqlite3` con Jest**.
+- Motivos:
+  - Tests más rápidos.
+  - Tests determinísticos.
+  - No se requiere `palabras.db` durante las pruebas.
+  - Evita fallas en Azure DevOps.
 
-Confirmar que la conexión aparece como colaborador en el resource group.  
+El mock incluye:
+- `new sqlite3.Database()`
+- `db.run()`
+- `db.all()`
 
-![image3](images/foto3.png)
+---
 
-6. Probar la ejecución del pipeline `azure-pipeline.yml` del TP4 (asegurarse de que el self‑hosted agent esté levantado).
+## 📌 3. Estructura del Proyecto
 
-![image4](images/foto4.png)
+```bash
+TP6-Olivetto-Cervellini/
+│
+├── backend/
+│   ├── index.js
+│   ├── index.test.js
+│   └── palabras.db
+│
+├── frontend/
+│   ├── app.js
+│   ├── app.test.js
+│   ├── index.js
+│   └── index.html
+│
+├── images/
+│   └── (imágenes utilizadas en este documento)
+│
+├── decisiones.md
+└── README.md
+```
 
-7. Crear environments: `QA` y `PROD`. 
+---
 
-![environments](images/environments.png) 
+## 📌 4. Tests Implementados
 
-8. Modificar el pipeline para incluir los requisitos nuevos:
-   - Usar un agente de Azure (hosted agent).  
-   - Ajustar stages/tasks según el despliegue a QA.
+### **Frontend (6 tests en total)**  
+Archivo: `frontend/app.test.js`
 
-Verificar que el pipeline corre correctamente.  
+Se probaron los siguientes comportamientos:
 
-![image5](images/foto5.png)
+1. Rechazo de cadenas vacías o solo espacios.
+2. Rechazo de palabras de un solo carácter.
+3. Aceptación de palabras válidas de dos o más caracteres.
+4. Aceptación de palabras con espacios al inicio o final.
+5. Validación de que siempre se retorne un valor booleano.
+6. Manejo correcto cuando la función recibe `undefined` o sin parámetros.
 
-Confirmar que la Web App `palabras-qa` muestra la aplicación correctamente.  
+---
 
-![image6](images/foto6.png)
+### **Backend (5 tests en total)**  
+Archivo: `backend/index.test.js`
 
-9. Configurar las aprobaciones necesarias del environment `PROD`.  
+Casos probados:
 
-10. Modificar el pipeline para añadir el stage de `PROD` y las aprobaciones correspondientes.
+1. **GET /health**  
+   - Debe responder 200.  
+   - Body con: `status`, `timestamp`, `environment`.
 
-Evidencias del despliegue y aprobaciones:
+2. **POST /api/palabras sin campo palabra**  
+   - Respuesta esperada: `400 { error: "La palabra es requerida" }`.
 
-![image7](images/foto7.png)
+3. **POST /api/palabras con cadena vacía**  
+   - Respuesta 400.
 
-![image8](images/foto8.png)
+4. **POST /api/palabras solo con espacios**  
+   - Respuesta 400.
 
-![image9](images/foto9.png)
+5. **POST /api/palabras válida**  
+   - Debe responder código 2xx.  
+   - No debe incluir campo `error`.
 
-## 2. Arquitectura de Release Elegida
+---
 
-### Herramientas y Servicios Cloud Utilizados
+## 📌 5. Ajustes en el Backend (para alinear lógica + tests)
 
-**Azure DevOps Services:**
-- **Azure Pipelines**: Para implementar CI/CD con stages diferenciados
-- **Azure Repos**: Repositorio de código fuente
-- **Environments**: QA y PROD con configuraciones específicas
-- **Variable Groups**: `QA-Variables` y `PROD-Variables`
-- **Service Connections**: Conexión segura a Azure Resource Group
+Para que los tests reflejen comportamientos reales, se incorporaron validaciones adicionales en:
 
-**Azure Cloud Services:**
-- **Azure App Service**: Hosting de aplicaciones web Node.js
-- **Resource Group**: `palabras-ingsoft3-2025` para organización de recursos
-- **App Service Plan**: `plan-palabras-free` para optimización de costos
+**POST `/api/palabras`**
 
-**Justificación de la Arquitectura:**
-- **Separación de entornos**: QA y PROD completamente aislados para testing seguro
-- **Pipeline multi-stage**: Permite testing en QA antes de desplegar a producción
-- **Hosted agents**: Mayor disponibilidad y mantenimiento automático vs self-hosted
-- **App Service**: Plataforma managed que reduce overhead operacional
+Se decidió que:
+- El campo `palabra` sea obligatorio.
+- Se aplique `.trim()` para eliminar espacios.
+- Debe tener mínimo 2 caracteres.
+- Si alguna regla falla → `400` con un mensaje unificado:
+  
+## 📌 6. CI/CD en Azure DevOps
+CI – Integración Continua
+El pipeline se ejecuta automáticamente ante cada push a main.
+Pasos de la pipeline:
+- Checkout del repositorio.
+- Instalación de Node.js.
+- Instalación de dependencias en frontend y backend.
+- Ejecución de tests unitarios.
+- Publicación de resultados.
+Resultados
+Todos los tests están en verde.
+La pipeline garantiza que cada cambio nuevo pase las pruebas obligatoriamente.
 
-## 3. Configuración de Entornos y Variables
-
-### Variables por Entorno
-
-**Variables QA (`QA-Variables`):**
--ENVIRONMENT_NAME -> QA
--NODE_ENV -> qa
--DB_PATH -> ./palabras-qa.db
-
-**Variables PROD (`PROD-Variables`):**
--ENVIRONMENT_NAME -> PROD
--NODE_ENV -> prod
--DB_PATH -> ./palabras-prod.db
-
-![variables](images/variables.png) 
-
-## 4. Estrategia de Aprobaciones Implementada
-
-### Configuración de Aprobaciones
-
-**Environment QA:**
-- **Sin aprobaciones manuales**: Despliegue automático tras successful build
-- **Justificación**: Entorno de testing, necesita feedback rápido para desarrollo
-
-**Environment PROD:**
-- **Aprobación manual requerida**: Configurada en el environment PROD de Azure DevOps
-- **Aprobadores**: [Lista de usuarios autorizados]
-- **Timeout**: 30 días para aprobar o rechazar
-- **Re-approval**: Requerida si hay cambios en el deployment
+![image1](images/pipeline.png)
